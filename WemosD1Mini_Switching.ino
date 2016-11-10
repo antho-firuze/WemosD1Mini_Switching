@@ -2,40 +2,27 @@
 #include <ESP8266mDNS.h>
 #include <ThingSpeak.h>
 #include <WiFiUdp.h>
-#include <ArduinoOTA.h>
 #include <TimeLib.h>
 
+/*-------- shortcuts code ----------*/
 boolean doSerial=true;      
 #define sb    Serial.begin(9600)        // shortcuts for serial output
 #define sp    Serial.print
 #define spf   Serial.printf
 #define spln  Serial.println
  
-/*-------- Telnet code ----------*/
-// start telnet server (do NOT put in setup())
-const uint16_t aport = 23; // standard port
-WiFiServer TelnetServer(aport);
-WiFiClient TelnetClient;
-
-void tp(String output) {
-  if (!TelnetClient)  // otherwise it works only once
-        TelnetClient = TelnetServer.available();
-  if (TelnetClient.connected()) {
-    TelnetClient.println(output);
-  }  
-}
-
 // Hotspot SSID and password
 const char* ssid = "My Azuz"; //"My Azuz"; "AZ_ZAHRA_PELNI";
 const char* password = "azzahra4579";
 WiFiClient client;
 
 /*-------- ThingSpeak code ----------*/
-String apiKey = "X02CKM0GVEV2SFPL";
-const char* server = "api.thingspeak.com";
-long ChannelNumber = 170741;
+const char * WriteAPIKey = "MK9FKFGB7W5KYEL9";
+const char * ReadAPIKey = "X02CKM0GVEV2SFPL";
+const char * server = "api.thingspeak.com";
+unsigned long ChannelNumber = 170741;
 int FieldNumber = 1;
-int minReadingInterval = 1000; // 1 min = 60000 ms, suggest 5 min = 300000 ms
+int minReadingInterval = 5000; // 1 min = 60000 ms, suggest 5 min = 300000 ms
 
 /*-------- NTP code ----------*/
 IPAddress ntpServerIP; // NTP server's ip address
@@ -56,31 +43,27 @@ long getNtpTime()
   WiFi.hostByName(ntpServerName, ntpServerIP);
   sp(ntpServerName); sp(": "); spln(ntpServerIP);
   sendNTPpacket(ntpServerIP);
-
   delay(1500);
 
-//  uint32_t beginWait = millis();
-//  while (millis() - beginWait < 1500) {
-    int size = udp.parsePacket();
-    if (size >= NTP_PACKET_SIZE) {
-      spln("Receive NTP Response");
-      udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
-      unsigned long secsSince1900;
-      // convert four bytes starting at location 40 to a long integer
-      secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
-      secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
-      secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
-      secsSince1900 |= (unsigned long)packetBuffer[43];
-      return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
-    }
-//  }
+  int size = udp.parsePacket();
+  if (size >= NTP_PACKET_SIZE) {
+    spln("Receive NTP Response");
+    udp.read(packetBuffer, NTP_PACKET_SIZE);  // read packet into the buffer
+    unsigned long secsSince1900;
+    // convert four bytes starting at location 40 to a long integer
+    secsSince1900 =  (unsigned long)packetBuffer[40] << 24;
+    secsSince1900 |= (unsigned long)packetBuffer[41] << 16;
+    secsSince1900 |= (unsigned long)packetBuffer[42] << 8;
+    secsSince1900 |= (unsigned long)packetBuffer[43];
+    return secsSince1900 - 2208988800UL + timeZone * SECS_PER_HOUR;
+  }
   spln("No NTP Response :-(");
   return 0; // return 0 if unable to get the time
 }
 
 void sendNTPpacket(IPAddress &address)
 {
-  // spln("sending NTP packet...");
+//   spln("sending NTP packet...");
   // set all bytes in the buffer to 0
   memset(packetBuffer, 0, NTP_PACKET_SIZE);
   // Initialize values needed to form NTP request
@@ -106,7 +89,7 @@ void sendNTPpacket(IPAddress &address)
 int SwitchPin = D1;
 
 void switch_on(boolean bol){
-  // float lamp_1 = ThingSpeak.readFloatField(ChannelNumber, FieldNumber, "X02CKM0GVEV2SFPL");
+  // float lamp_1 = ThingSpeak.readFloatField(ChannelNumber, FieldNumber, ReadAPIKey);
   sp("Lamp: "); spln((bol)?"ON":"OFF");
   // tp("Lamp_1: "+String(lamp_1));
   //digitalWrite(SwitchPin, (int(lamp_1)>0)?HIGH:LOW);
@@ -114,18 +97,27 @@ void switch_on(boolean bol){
 }
 
 /*-------- Schedule code ----------*/
-int on_h = 16;
-int on_m = 31;
-int off_h = 16;
-int off_m = 33;
+//write
+int on_h, on_m, of_h, of_m = -1;
+//http://api.thingspeak.com/update?api_key=MK9FKFGB7W5KYEL9&field2=17
+//http://api.thingspeak.com/update?api_key=MK9FKFGB7W5KYEL9&field3=30
+//http://api.thingspeak.com/update?api_key=MK9FKFGB7W5KYEL9&field4=5
+//http://api.thingspeak.com/update?api_key=MK9FKFGB7W5KYEL9&field5=30
+// ThingSpeak.writeField(ChannelNumber, FieldNumber, Value, WriteAPIKey);
+
+//read
+//https://thingspeak.com/channels/170741/field/2/last?api_key=X02CKM0GVEV2SFPL
+// float lamp_1 = ThingSpeak.readFloatField(ChannelNumber, FieldNumber, ReadAPIKey);
+// ThingSpeak.readFloatField
+// ThingSpeak.readIntField
+// ThingSpeak.readLongField
+// ThingSpeak.readStringField
+// ThingSpeak.readRaw
 
 void setup() 
 {
   sb; 
   
-  TelnetServer.begin();
-  TelnetServer.setNoDelay(true);
- 
   spln();
   spln();
   spln("Booting");
@@ -141,56 +133,63 @@ void setup()
   
   udp.begin(localPort);
   ThingSpeak.begin(client);
+  
   setSyncProvider(getNtpTime);
   setSyncInterval(300);
-
-  // Port defaults to 8266
-  // ArduinoOTA.setPort(8266);
-
-  // Hostname defaults to esp8266-[ChipID]
-  // ArduinoOTA.setHostname("myesp8266");
-
-  // No authentication by default
-  // ArduinoOTA.setPassword((const char *)"123");
-
-  ArduinoOTA.onStart([]() {
-    spln("Start");
-  });
-  ArduinoOTA.onEnd([]() {
-    spln("\nEnd");
-  });
-  ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
-    spf("Progress: %u%%\r", (progress / (total / 100)));
-  });
-  ArduinoOTA.onError([](ota_error_t error) {
-    spf("Error[%u]: ", error);
-    if (error == OTA_AUTH_ERROR) spln("Auth Failed");
-    else if (error == OTA_BEGIN_ERROR) spln("Begin Failed");
-    else if (error == OTA_CONNECT_ERROR) spln("Connect Failed");
-    else if (error == OTA_RECEIVE_ERROR) spln("Receive Failed");
-    else if (error == OTA_END_ERROR) spln("End Failed");
-  });
-  ArduinoOTA.begin();
 }
  
 void loop() 
 {
-  ArduinoOTA.handle();
+  if (timeStatus() == timeNotSet || timeStatus() == timeNeedsSync)
+    setSyncProvider(getNtpTime);
 
   digitalClockDisplay();
-  if (timeStatus() != timeNeedsSync) {
-    setSyncProvider(getNtpTime);
+  int on_h1 = ThingSpeak.readIntField(ChannelNumber, 2, ReadAPIKey);
+  int on_m1 = ThingSpeak.readIntField(ChannelNumber, 3, ReadAPIKey);
+  int of_h1 = ThingSpeak.readIntField(ChannelNumber, 4, ReadAPIKey);
+  int of_m1 = ThingSpeak.readIntField(ChannelNumber, 5, ReadAPIKey);
+  if (on_h < 0) {
+    if (on_h1 > 0)
+      on_h = on_h1;
+  } else if (on_h != on_h1) {
+    if (on_h1 > 0)
+      on_h = on_h1;
   }
-  if (hour()==on_h && minute()==on_m){
-    if (digitalRead(SwitchPin)==LOW){
-      switch_on(true);
-    }
+  if (on_m < 0) {
+    on_m = on_m1;
+  } else if (on_m1 >= 0) {
+    if (on_m != on_m1) 
+      on_m = on_m1;
   }
-  if (hour()==off_h && minute()==off_m){
-    if (digitalRead(SwitchPin)==HIGH){
-      switch_on(false);
-    }
+  
+  if (of_h < 0) {
+    if (of_h1 > 0)
+      of_h = of_h1;
+  } else if (of_h != of_h1) {
+    if (of_h1 > 0)
+      of_h = of_h1;
   }
+  if (of_m < 0) {
+    of_m = of_m1;
+  } else if (of_m1 >= 0) {
+    if (of_m != of_m1) 
+      of_m = of_m1;
+  }
+    
+  sp(on_h); sp(":"); spln(on_m); 
+  sp(of_h); sp(":"); spln(of_m); 
+  spln(); spln();
+  
+//  if (hour()>=on_h && minute()==on_m){
+//    if (digitalRead(SwitchPin)==LOW){
+//      switch_on(true);
+//    }
+//  }
+//  if (hour()==off_h && minute()==off_m){
+//    if (digitalRead(SwitchPin)==HIGH){
+//      switch_on(false);
+//    }
+//  }
   
   delay(minReadingInterval);
 }
@@ -198,23 +197,17 @@ void loop()
 void digitalClockDisplay()
 {
   // digital clock display of the time
-  Serial.print(hour());
-  printDigits(minute());
-  printDigits(second());
-  Serial.print(" ");
-  Serial.print(day());
-  Serial.print(".");
-  Serial.print(month());
-  Serial.print(".");
-  Serial.print(year());
-  Serial.println();
+  sp(hour());  printDigits(minute());  printDigits(second());
+  sp(" ");
+  sp(day());  sp(".");  sp(month());  sp(".");  sp(year());
+  spln();
 }
 
 void printDigits(int digits)
 {
   // utility for digital clock display: prints preceding colon and leading 0
-  Serial.print(":");
+  sp(":");
   if (digits < 10)
-    Serial.print('0');
-  Serial.print(digits);
+    sp('0');
+  sp(digits);
 }
