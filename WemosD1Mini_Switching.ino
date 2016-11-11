@@ -84,70 +84,29 @@ void sendNTPpacket(IPAddress &address)
   udp.endPacket();
 }
 
-/*-------- Switching code ----------*/
-//int LED = LED_BUILTIN;
-int SwitchPin = D1;
-
-void switch_on(boolean bol){
-  // float lamp_1 = ThingSpeak.readFloatField(ChannelNumber, FieldNumber, ReadAPIKey);
-  sp("Lamp: "); spln((bol)?"ON":"OFF");
-  // tp("Lamp_1: "+String(lamp_1));
-  //digitalWrite(SwitchPin, (int(lamp_1)>0)?HIGH:LOW);
-  digitalWrite(SwitchPin, (bol)?HIGH:LOW);
-}
-
 /*-------- Schedule code ----------*/
-//write
 int on_h, on_m, of_h, of_m = -1;
-//http://api.thingspeak.com/update?api_key=MK9FKFGB7W5KYEL9&field2=17
-//http://api.thingspeak.com/update?api_key=MK9FKFGB7W5KYEL9&field3=30
-//http://api.thingspeak.com/update?api_key=MK9FKFGB7W5KYEL9&field4=5
-//http://api.thingspeak.com/update?api_key=MK9FKFGB7W5KYEL9&field5=30
+int on_h1, on_m1, of_h1, of_m1, lamp, is_auto = 0;
+int on_t, of_t, cur_t = 0;
+// ThingSpeak write on server ===============================================
+// http://api.thingspeak.com/update?api_key=MK9FKFGB7W5KYEL9&field2=1
 // ThingSpeak.writeField(ChannelNumber, FieldNumber, Value, WriteAPIKey);
-
-//read
-//https://thingspeak.com/channels/170741/field/2/last?api_key=X02CKM0GVEV2SFPL
-// float lamp_1 = ThingSpeak.readFloatField(ChannelNumber, FieldNumber, ReadAPIKey);
+// ThingSpeak read on server ================================================
+// https://thingspeak.com/channels/170741/field/2/last?api_key=X02CKM0GVEV2SFPL
+// float lamp = ThingSpeak.readFloatField(ChannelNumber, FieldNumber, ReadAPIKey);
 // ThingSpeak.readFloatField
 // ThingSpeak.readIntField
 // ThingSpeak.readLongField
 // ThingSpeak.readStringField
 // ThingSpeak.readRaw
 
-void setup() 
-{
-  sb; 
-  
-  spln();
-  spln();
-  spln("Booting");
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(ssid, password);
-  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
-    spln("Connection Failed! Rebooting...");
-    delay(5000);
-    ESP.restart();
-  }
-  spln("Ready");
-  sp("IP address: "); spln(WiFi.localIP());
-  
-  udp.begin(localPort);
-  ThingSpeak.begin(client);
-  
-  setSyncProvider(getNtpTime);
-  setSyncInterval(300);
-}
- 
-void loop() 
-{
-  if (timeStatus() == timeNotSet || timeStatus() == timeNeedsSync)
-    setSyncProvider(getNtpTime);
-
-  digitalClockDisplay();
-  int on_h1 = ThingSpeak.readIntField(ChannelNumber, 2, ReadAPIKey);
-  int on_m1 = ThingSpeak.readIntField(ChannelNumber, 3, ReadAPIKey);
-  int of_h1 = ThingSpeak.readIntField(ChannelNumber, 4, ReadAPIKey);
-  int of_m1 = ThingSpeak.readIntField(ChannelNumber, 5, ReadAPIKey);
+bool readScheduleOnServer(){
+  lamp = ThingSpeak.readIntField(ChannelNumber, 1, ReadAPIKey);
+  is_auto = ThingSpeak.readIntField(ChannelNumber, 2, ReadAPIKey);
+  on_h1 = ThingSpeak.readIntField(ChannelNumber, 3, ReadAPIKey);
+  on_m1 = ThingSpeak.readIntField(ChannelNumber, 4, ReadAPIKey);
+  of_h1 = ThingSpeak.readIntField(ChannelNumber, 5, ReadAPIKey);
+  of_m1 = ThingSpeak.readIntField(ChannelNumber, 6, ReadAPIKey);
   if (on_h < 0) {
     if (on_h1 > 0)
       on_h = on_h1;
@@ -176,20 +135,92 @@ void loop()
       of_m = of_m1;
   }
     
-  sp(on_h); sp(":"); spln(on_m); 
-  sp(of_h); sp(":"); spln(of_m); 
-  spln(); spln();
+  cur_t = hour() * 100 + minute();
+  on_t = on_h * 100 + on_m;
+  of_t = of_h * 100 + of_m;
+
+  sp("lamp:"); spln(lamp);
+  sp("is_auto:"); spln(is_auto);
+  sp("on_t:"); spln(on_t);
+  sp("of_t:"); spln(of_t);
+  sp("cur_t:"); spln(cur_t);
+
+  if (is_auto == 1) {
+    if (cur_t >= of_t && cur_t < on_t) {
+      spln("lampu mati !");
+      switch_lamp(false);
+      if (lamp == 1) {
+        ThingSpeak.writeField(ChannelNumber, 1, 0, WriteAPIKey);
+        spln("Set Lamp On Server = 0");
+      }
+    } else {
+      spln("lampu menyala !");
+      switch_lamp(true);
+      if (lamp == 0) {
+        ThingSpeak.writeField(ChannelNumber, 1, 1, WriteAPIKey);
+        spln("Set Lamp On Server = 1");
+      }
+    }
+  } else {
+    if (lamp == 1)
+      switch_lamp(true);
+    else
+      switch_lamp(false);
+  }
+  spln();
+  return true;
+}
+
+/*-------- Switching code ----------*/
+//int switchPin = LED_BUILTIN;
+int switchPin = D1;
+
+void switch_lamp(boolean stat){
+  sp("Set Lamp On Device: "); spln((stat)?"ON":"OFF");
+
+  if (stat){
+    if (digitalRead(switchPin)==LOW)
+      digitalWrite(switchPin, HIGH);
+  } else {
+    if (digitalRead(switchPin)==HIGH)
+      digitalWrite(switchPin, LOW);
+  }
+}
+
+void setup() 
+{
+  sb; 
   
-//  if (hour()>=on_h && minute()==on_m){
-//    if (digitalRead(SwitchPin)==LOW){
-//      switch_on(true);
-//    }
-//  }
-//  if (hour()==off_h && minute()==off_m){
-//    if (digitalRead(SwitchPin)==HIGH){
-//      switch_on(false);
-//    }
-//  }
+  spln(); spln();
+  spln("Booting");
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(ssid, password);
+  while (WiFi.waitForConnectResult() != WL_CONNECTED) {
+    spln("Connection Failed! Rebooting...");
+    delay(5000);
+    ESP.restart();
+  }
+  spln("Ready");
+  sp("IP address: "); spln(WiFi.localIP());
+  
+  udp.begin(localPort);
+  ThingSpeak.begin(client);
+  
+  setSyncProvider(getNtpTime);
+  setSyncInterval(300);
+
+  pinMode(switchPin, OUTPUT);
+}
+ 
+void loop() 
+{
+  if (timeStatus() == timeNotSet || timeStatus() == timeNeedsSync)
+    setSyncProvider(getNtpTime);
+
+  digitalClockDisplay();
+
+  if (!readScheduleOnServer())
+    spln("readOnServer: Failed !");
   
   delay(minReadingInterval);
 }
@@ -211,3 +242,4 @@ void printDigits(int digits)
     sp('0');
   sp(digits);
 }
+
